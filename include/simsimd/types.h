@@ -187,6 +187,7 @@ typedef signed char simsimd_i8_t;
 typedef unsigned char simsimd_b8_t;
 typedef long long simsimd_i64_t;
 typedef unsigned long long simsimd_u64_t;
+typedef __bf16 simsimd_bf16_t;
 
 typedef simsimd_u64_t simsimd_size_t;
 typedef simsimd_f64_t simsimd_distance_t;

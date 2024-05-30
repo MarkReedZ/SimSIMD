@@ -294,6 +294,12 @@ int main(int argc, char** argv) {
     register_<simsimd_f64_t>("vdot_f64c_skylake", simsimd_vdot_f64c_skylake, simsimd_vdot_f64c_serial);
 #endif
 
+    register_<simsimd_bf16_t>("dot_bf16_serial", simsimd_dot_bf16_serial, simsimd_dot_bf16_accurate);
+    register_<simsimd_bf16_t>("cos_bf16_serial", simsimd_cos_bf16_serial, simsimd_cos_bf16_accurate);
+    register_<simsimd_bf16_t>("l2sq_bf16_serial", simsimd_l2sq_bf16_serial, simsimd_l2sq_bf16_accurate);
+    register_<simsimd_bf16_t>("kl_bf16_serial", simsimd_kl_bf16_serial, simsimd_kl_bf16_accurate);
+    register_<simsimd_bf16_t>("js_bf16_serial", simsimd_js_bf16_serial, simsimd_js_bf16_accurate);
+
     register_<simsimd_f16_t>("dot_f16_serial", simsimd_dot_f16_serial, simsimd_dot_f16_accurate);
     register_<simsimd_f16_t>("cos_f16_serial", simsimd_cos_f16_serial, simsimd_cos_f16_accurate);
     register_<simsimd_f16_t>("l2sq_f16_serial", simsimd_l2sq_f16_serial, simsimd_l2sq_f16_accurate);
@@ -317,6 +323,10 @@ int main(int argc, char** argv) {
     register_<simsimd_f64_t>("dot_f64c_serial", simsimd_dot_f64c_serial, simsimd_dot_f64c_serial);
     register_<simsimd_f32_t>("dot_f32c_serial", simsimd_dot_f32c_serial, simsimd_dot_f32c_accurate);
     register_<simsimd_f16_t>("dot_f16c_serial", simsimd_dot_f16c_serial, simsimd_dot_f16c_accurate);
+    register_<simsimd_bf16_t>("dot_bf16c_serial", simsimd_dot_bf16c_serial, simsimd_dot_bf16c_accurate);
+
+    register_<simsimd_f16_t>("vdot_f16c_serial", simsimd_vdot_f16c_serial, simsimd_vdot_f16c_accurate);
+    register_<simsimd_bf16_t>("vdot_bf16c_serial", simsimd_vdot_bf16c_serial, simsimd_vdot_bf16c_accurate);
 
     register_<simsimd_b8_t>("hamming_b8_serial", simsimd_hamming_b8_serial, simsimd_hamming_b8_serial);
     register_<simsimd_b8_t>("jaccard_b8_serial", simsimd_jaccard_b8_serial, simsimd_jaccard_b8_serial);
