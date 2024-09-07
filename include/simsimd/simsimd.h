@@ -117,6 +117,7 @@
 #include "spatial.h"     // L2, Cosine
 
 #if defined(SIMSIMD_DEFAULT_TARGET_ARM)
+#undef __ARM_ARCH
 #define __ARM_ARCH SIMSIMD_DEFAULT_TARGET_ARM
 #undef SIMSIMD_DEFAULT_TARGET_ARM
 #endif
@@ -478,6 +479,7 @@ SIMSIMD_PUBLIC simsimd_capability_t simsimd_capabilities_arm(void) {
 #pragma GCC pop_options
 
 #if defined(SIMSIMD_DEFAULT_TARGET_ARM)
+#undef __ARM_ARCH
 #define __ARM_ARCH SIMSIMD_DEFAULT_TARGET_ARM
 #undef SIMSIMD_DEFAULT_TARGET_ARM
 #endif
