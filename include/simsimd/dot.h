@@ -526,28 +526,24 @@ simsimd_dot_bf16_neon_cycle:
 SIMSIMD_PUBLIC void simsimd_dot_bf16c_neon(simsimd_bf16_t const* a, simsimd_bf16_t const* b, simsimd_size_t n, //
                                            simsimd_distance_t* results) {
 
-    // A nicer approach is to use `bf16` arithmetic for the dot product, but that requires
-    // FMLA extensions available on Arm v8.3 and later. That we can also process 16 entries
-    // at once. That's how the original implementation worked, but compiling it was a nightmare :)
-    float32x4_t ab_real_vec = vdupq_n_f32(0);
-    float32x4_t ab_imag_vec = vdupq_n_f32(0);
+    float32x4_t ab_real_vec, ab_imag_vec;
 
     while (n >= 8) {
-        // Unpack the input arrays into real and imaginary parts.
-        // MSVC sadly doesn't recognize the `vld2_bf16`, so we load the  data as signed
-        // integers of the same size and reinterpret with `vreinterpret_bf16_s16` afterwards.
-        int16x4x2_t a_vec = vld2_s16((short*)a);
-        int16x4x2_t b_vec = vld2_s16((short*)b);
-        float32x4_t a_real_vec = vcvt_f32_bf16(vreinterpret_bf16_s16(a_vec.val[0]));
-        float32x4_t a_imag_vec = vcvt_f32_bf16(vreinterpret_bf16_s16(a_vec.val[1]));
-        float32x4_t b_real_vec = vcvt_f32_bf16(vreinterpret_bf16_s16(b_vec.val[0]));
-        float32x4_t b_imag_vec = vcvt_f32_bf16(vreinterpret_bf16_s16(b_vec.val[1]));
 
-        // Compute the dot product:
-        ab_real_vec = vfmaq_f32(ab_real_vec, a_real_vec, b_real_vec);
-        ab_real_vec = vfmsq_f32(ab_real_vec, a_imag_vec, b_imag_vec);
-        ab_imag_vec = vfmaq_f32(ab_imag_vec, a_real_vec, b_imag_vec);
-        ab_imag_vec = vfmaq_f32(ab_imag_vec, a_imag_vec, b_real_vec);
+        bfloat16x8_t a_vec = vld1q_bf16((simsimd_bf16_for_arm_simd_t const*)a);
+        bfloat16x8_t b_vec = vld1q_bf16((simsimd_bf16_for_arm_simd_t const*)b);
+
+        // ar*br + (-ai*bi)
+        ab_real_vec = vbfmlaltq_f32(ab_real_vec, a_vec, b_vec);
+        ab_real_vec = vbfmlalbq_f32(ab_real_vec, vreinterpretq_bf16_u16(veorq_u16(vreinterpretq_u16_bf16(a_vec), vdupq_n_u16(0x8000))), b_vec);
+
+        // vnegq requires +fp16.  It looks nicer, and the assembly is a tad better,  but we don't want to change the target opts
+        //ab_real_vec = vbfmlalbq_f32(ab_real_vec, vreinterpretq_bf16_f16(vnegq_f16(vreinterpretq_f16_bf16(a_vec))), b_vec);
+
+        // vrev32q swaps imag and real
+        // ar * bi + ai * br;
+        ab_imag_vec = vbfmlaltq_f32(ab_imag_vec, a_vec, vreinterpretq_bf16_u16(vrev32q_u16(vreinterpretq_u16_bf16(b_vec))));
+        ab_imag_vec = vbfmlalbq_f32(ab_imag_vec, a_vec, vreinterpretq_bf16_u16(vrev32q_u16(vreinterpretq_u16_bf16(b_vec))));
 
         n -= 8, a += 8, b += 8;
     }
