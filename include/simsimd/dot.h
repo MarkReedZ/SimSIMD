@@ -1201,37 +1201,38 @@ simsimd_dot_f64_skylake_cycle:
 SIMSIMD_PUBLIC void simsimd_dot_f32c_skylake(simsimd_f32_t const* a, simsimd_f32_t const* b, simsimd_size_t n,
                                              simsimd_distance_t* results) {
 
-    __m512 ab_real_vec = _mm512_setzero();
-    __m512 ab_imag_vec = _mm512_setzero();
-    __m512 a_vec;
-    __m512i b_vec;
+    __m512 ab_real_vec = _mm512_setzero_ps();
+    __m512 ab_imag_vec = _mm512_setzero_ps();
+    __m512 a_vec, b_vec;
 
-    // We take into account, that FMS is the same as FMA with a negative multiplier.
-    // To multiply a floating-point value by -1, we can use the `XOR` instruction to flip the sign bit.
-    // This way we can avoid the shuffling and the need for separate real and imaginary parts.
-    // For the imaginary part of the product, we would need to swap the real and imaginary parts of
-    // one of the vectors.
-    __m512i sign_flip_vec = _mm512_set1_epi64(0x8000000000000000);
     __m512i swap_adjacent_vec = _mm512_set_epi8(                        //
         59, 58, 57, 56, 63, 62, 61, 60, 51, 50, 49, 48, 55, 54, 53, 52, // 4th 128-bit lane
         43, 42, 41, 40, 47, 46, 45, 44, 35, 34, 33, 32, 39, 38, 37, 36, // 3rd 128-bit lane
         27, 26, 25, 24, 31, 30, 29, 28, 19, 18, 17, 16, 23, 22, 21, 20, // 2nd 128-bit lane
         11, 10, 9, 8, 15, 14, 13, 12, 3, 2, 1, 0, 7, 6, 5, 4            // 1st 128-bit lane
     );
+
 simsimd_dot_f32c_skylake_cycle:
     if (n < 16) {
         __mmask16 mask = (__mmask16)_bzhi_u32(0xFFFFFFFF, n);
         a_vec = _mm512_maskz_loadu_ps(mask, a);
-        b_vec = _mm512_castps_si512(_mm512_maskz_loadu_ps(mask, b));
+        b_vec = _mm512_maskz_loadu_ps(mask, b);
         n = 0;
     } else {
         a_vec = _mm512_loadu_ps(a);
-        b_vec = _mm512_castps_si512(_mm512_loadu_ps(b));
+        b_vec = _mm512_loadu_ps(b);
         a += 16, b += 16, n -= 16;
     }
-    ab_real_vec = _mm512_fmadd_ps(_mm512_castsi512_ps(_mm512_xor_si512(b_vec, sign_flip_vec)), a_vec, ab_real_vec);
-    ab_imag_vec =
-        _mm512_fmadd_ps(_mm512_castsi512_ps(_mm512_shuffle_epi8(b_vec, swap_adjacent_vec)), a_vec, ab_imag_vec);
+
+    // ab_real += ar * br - ai * bi;                                                                              \
+    // fmaddsub adds the odd entries and subtracts the even (imaginary)
+    ab_real_vec = _mm512_fmaddsub_ps(a_vec, b_vec, ab_real_vec);
+
+    //ab_imag += ar * bi + ai * br;  
+    // Swap real/imag in b and fmadd
+    b_vec = _mm512_castsi512_ps(_mm512_shuffle_epi8(_mm512_castps_si512(b_vec), swap_adjacent_vec));
+    ab_imag_vec = _mm512_fmadd_ps(a_vec, b_vec, ab_imag_vec);
+
     if (n)
         goto simsimd_dot_f32c_skylake_cycle;
 
@@ -1248,12 +1249,9 @@ SIMSIMD_PUBLIC void simsimd_vdot_f32c_skylake(simsimd_f32_t const* a, simsimd_f3
     __m512 a_vec;
     __m512 b_vec;
 
-    // We take into account, that FMS is the same as FMA with a negative multiplier.
-    // To multiply a floating-point value by -1, we can use the `XOR` instruction to flip the sign bit.
-    // This way we can avoid the shuffling and the need for separate real and imaginary parts.
-    // For the imaginary part of the product, we would need to swap the real and imaginary parts of
-    // one of the vectors.
-    __m512i sign_flip_vec = _mm512_set1_epi64(0x8000000000000000);
+    // ab_real += ar * br + ai * bi;                                                                              \
+    // ab_imag += ar * bi - ai * br;  
+    // Real will use fmadd, while the imaginary will swap then fmaddsub
     __m512i swap_adjacent_vec = _mm512_set_epi8(                        //
         59, 58, 57, 56, 63, 62, 61, 60, 51, 50, 49, 48, 55, 54, 53, 52, // 4th 128-bit lane
         43, 42, 41, 40, 47, 46, 45, 44, 35, 34, 33, 32, 39, 38, 37, 36, // 3rd 128-bit lane
@@ -1272,9 +1270,10 @@ simsimd_vdot_f32c_skylake_cycle:
         a += 16, b += 16, n -= 16;
     }
     ab_real_vec = _mm512_fmadd_ps(a_vec, b_vec, ab_real_vec);
-    a_vec = _mm512_castsi512_ps(_mm512_xor_si512(_mm512_castps_si512(a_vec), sign_flip_vec));
+
     b_vec = _mm512_castsi512_ps(_mm512_shuffle_epi8(_mm512_castps_si512(b_vec), swap_adjacent_vec));
-    ab_imag_vec = _mm512_fmadd_ps(a_vec, b_vec, ab_imag_vec);
+    ab_imag_vec = _mm512_fmaddsub_ps(a_vec, b_vec, ab_imag_vec);
+
     if (n)
         goto simsimd_vdot_f32c_skylake_cycle;
 
@@ -1289,17 +1288,8 @@ SIMSIMD_PUBLIC void simsimd_dot_f64c_skylake(simsimd_f64_t const* a, simsimd_f64
     __m512d ab_real_vec = _mm512_setzero_pd();
     __m512d ab_imag_vec = _mm512_setzero_pd();
     __m512d a_vec;
-    __m512i b_vec;
+    __m512d b_vec;
 
-    // We take into account, that FMS is the same as FMA with a negative multiplier.
-    // To multiply a floating-point value by -1, we can use the `XOR` instruction to flip the sign bit.
-    // This way we can avoid the shuffling and the need for separate real and imaginary parts.
-    // For the imaginary part of the product, we would need to swap the real and imaginary parts of
-    // one of the vectors.
-    __m512i sign_flip_vec = _mm512_set_epi64(                                           //
-        0x8000000000000000, 0x0000000000000000, 0x8000000000000000, 0x0000000000000000, //
-        0x8000000000000000, 0x0000000000000000, 0x8000000000000000, 0x0000000000000000  //
-    );
     __m512i swap_adjacent_vec = _mm512_set_epi8(                        //
         55, 54, 53, 52, 51, 50, 49, 48, 63, 62, 61, 60, 59, 58, 57, 56, // 4th 128-bit lane
         39, 38, 37, 36, 35, 34, 33, 32, 47, 46, 45, 44, 43, 42, 41, 40, // 3rd 128-bit lane
@@ -1310,16 +1300,21 @@ simsimd_dot_f64c_skylake_cycle:
     if (n < 8) {
         __mmask8 mask = (__mmask8)_bzhi_u32(0xFFFFFFFF, n);
         a_vec = _mm512_maskz_loadu_pd(mask, a);
-        b_vec = _mm512_castpd_si512(_mm512_maskz_loadu_pd(mask, b));
+        b_vec = _mm512_maskz_loadu_pd(mask, b);
         n = 0;
     } else {
         a_vec = _mm512_loadu_pd(a);
-        b_vec = _mm512_castpd_si512(_mm512_loadu_pd(b));
+        b_vec = _mm512_loadu_pd(b);
         a += 8, b += 8, n -= 8;
     }
-    ab_real_vec = _mm512_fmadd_pd(_mm512_castsi512_pd(_mm512_xor_si512(b_vec, sign_flip_vec)), a_vec, ab_real_vec);
+    // ab_real += ar * br - ai * bi;                                                                              \
+    // fmaddsub adds the odd entries and subtracts the even (imaginary)
+    ab_real_vec = _mm512_fmaddsub_pd(a_vec, b_vec, ab_real_vec);
+    //ab_imag += ar * bi + ai * br;  
+    // Swap real/imag in b and fmadd
     ab_imag_vec =
-        _mm512_fmadd_pd(_mm512_castsi512_pd(_mm512_shuffle_epi8(b_vec, swap_adjacent_vec)), a_vec, ab_imag_vec);
+       _mm512_fmadd_pd(_mm512_castsi512_pd(_mm512_shuffle_epi8(_mm512_castpd_si512(b_vec), swap_adjacent_vec)), a_vec, ab_imag_vec);
+
     if (n)
         goto simsimd_dot_f64c_skylake_cycle;
 
@@ -1336,11 +1331,6 @@ SIMSIMD_PUBLIC void simsimd_vdot_f64c_skylake(simsimd_f64_t const* a, simsimd_f6
     __m512d a_vec;
     __m512d b_vec;
 
-    // We take into account, that FMS is the same as FMA with a negative multiplier.
-    // To multiply a floating-point value by -1, we can use the `XOR` instruction to flip the sign bit.
-    // This way we can avoid the shuffling and the need for separate real and imaginary parts.
-    // For the imaginary part of the product, we would need to swap the real and imaginary parts of
-    // one of the vectors.
     __m512i sign_flip_vec = _mm512_set_epi64(                                           //
         0x8000000000000000, 0x0000000000000000, 0x8000000000000000, 0x0000000000000000, //
         0x8000000000000000, 0x0000000000000000, 0x8000000000000000, 0x0000000000000000  //
@@ -1362,10 +1352,12 @@ simsimd_vdot_f64c_skylake_cycle:
         b_vec = _mm512_loadu_pd(b);
         a += 8, b += 8, n -= 8;
     }
+    // ab_real += ar * br + ai * bi;                                                                              \
+    // ab_imag += ar * bi - ai * br;  
+    // Real will use fmadd, while the imaginary will swap then fmaddsub
     ab_real_vec = _mm512_fmadd_pd(a_vec, b_vec, ab_real_vec);
-    a_vec = _mm512_castsi512_pd(_mm512_xor_si512(_mm512_castpd_si512(a_vec), sign_flip_vec));
     b_vec = _mm512_castsi512_pd(_mm512_shuffle_epi8(_mm512_castpd_si512(b_vec), swap_adjacent_vec));
-    ab_imag_vec = _mm512_fmadd_pd(a_vec, b_vec, ab_imag_vec);
+    ab_imag_vec = _mm512_fmaddsub_pd(a_vec, b_vec, ab_imag_vec);
     if (n)
         goto simsimd_vdot_f64c_skylake_cycle;
 
